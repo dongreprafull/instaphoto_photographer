@@ -1,31 +1,65 @@
 import { useEffect, useState } from 'react'
-import { mockIncomingRequest, REQUEST_TIMEOUT_SECONDS, formatCurrency } from '../mock/data'
+import { apiFetch, ApiError } from '../lib/api'
+import type { PendingOffer } from './Home'
 
-// UI-only pass: this screen is shown full-screen with a ringtone/vibration
-// loop (Android high-priority FCM data message + full-screen intent) the
-// moment a booking is broadcast to this photographer. Accept calls
-// POST /bookings/accept.php — an atomic server-side update ensures only the
-// first photographer to accept gets assigned; a late accept shows
-// "already assigned" instead of navigating to Active.
-export default function Incoming({ onAccept, onDecline }: { onAccept: () => void; onDecline: () => void }) {
-  const req = mockIncomingRequest
+const REQUEST_TIMEOUT_SECONDS = 15
+
+export default function Incoming({
+  offer,
+  onAccept,
+  onDecline,
+}: {
+  offer: PendingOffer
+  onAccept: () => void
+  onDecline: () => void
+}) {
   const [secondsLeft, setSecondsLeft] = useState(REQUEST_TIMEOUT_SECONDS)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const timer = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
           clearInterval(timer)
-          onDecline()
+          handleDecline()
           return 0
         }
         return s - 1
       })
     }, 1000)
     return () => clearInterval(timer)
-  }, [onDecline])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleAccept() {
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch('/bookings/accept.php', { method: 'POST', body: { booking_id: offer.booking_id } })
+      onAccept()
+    } catch (e: any) {
+      if (e instanceof ApiError && e.status === 409) {
+        setError('This booking was already taken by another photographer.')
+        setTimeout(onDecline, 1200)
+      } else {
+        setError(e?.message || 'Could not accept booking.')
+        setBusy(false)
+      }
+    }
+  }
+
+  async function handleDecline() {
+    try {
+      await apiFetch('/bookings/decline.php', { method: 'POST', body: { booking_id: offer.booking_id } })
+    } catch {
+      // ignore
+    }
+    onDecline()
+  }
 
   const progress = (secondsLeft / REQUEST_TIMEOUT_SECONDS) * 100
+  const total = parseFloat(offer.total_amount)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--dark)', color: '#fff' }}>
@@ -38,18 +72,18 @@ export default function Incoming({ onAccept, onDecline }: { onAccept: () => void
           <div className="ring-pulse delay" style={{ position: 'absolute', width: 120, height: 120, border: '2px solid var(--danger)', borderRadius: '50%' }} />
           <div className="ring-pulse" style={{ position: 'absolute', width: 120, height: 120, border: '2px solid var(--danger)', borderRadius: '50%' }} />
           <div style={{ width: 84, height: 84, borderRadius: '50%', background: 'var(--dark-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 500 }}>
-            {req.customerInitials}
+            {offer.booking_code.slice(-2)}
           </div>
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 18, fontWeight: 500 }}>{req.customerName}</div>
-          <div style={{ fontSize: 13, color: '#b9b7ad', marginTop: 2 }}>{req.distanceKm} km away</div>
+          <div style={{ fontSize: 18, fontWeight: 500 }}>Booking {offer.booking_code}</div>
+          <div style={{ fontSize: 13, color: '#b9b7ad', marginTop: 2 }}>{offer.distance_km} km away</div>
         </div>
 
         <div style={{ background: 'var(--dark-surface)', borderRadius: 16, padding: '16px 20px', width: 260, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <Row label="Package" value={`${req.packageName} · ${req.photos} photos`} />
-          <Row label="Duration" value={`${req.durationMins} min`} />
-          <Row label="Booking value" value={`${formatCurrency(req.value)} + GST`} />
+          <Row label="Package" value={`${offer.package_name} · ${offer.photos_count} photos`} />
+          <Row label="Duration" value={`${offer.duration_mins} min`} />
+          <Row label="Booking value" value={`₹${total.toFixed(2)}`} />
         </div>
 
         <div style={{ width: 220 }}>
@@ -58,20 +92,16 @@ export default function Incoming({ onAccept, onDecline }: { onAccept: () => void
           </div>
           <div style={{ textAlign: 'center', fontSize: 11, color: '#b9b7ad', marginTop: 6 }}>Expires in {secondsLeft}s</div>
         </div>
+
+        {error && <div style={{ color: '#f09595', fontSize: 12 }}>{error}</div>}
       </div>
 
       <div style={{ padding: '16px 24px 32px', display: 'flex', gap: 12 }}>
-        <button
-          onClick={onDecline}
-          style={{ flex: 1, height: 56, background: 'transparent', border: '1.5px solid var(--danger)', color: 'var(--danger-text)', borderRadius: 16, fontSize: 15, fontWeight: 500 }}
-        >
+        <button onClick={handleDecline} disabled={busy} style={{ flex: 1, height: 56, background: 'transparent', border: '1.5px solid var(--danger)', color: 'var(--danger-text)', borderRadius: 16, fontSize: 15, fontWeight: 500 }}>
           Decline
         </button>
-        <button
-          onClick={onAccept}
-          style={{ flex: 1, height: 56, background: 'var(--success)', color: '#fff', borderRadius: 16, fontSize: 15, fontWeight: 500 }}
-        >
-          Accept
+        <button onClick={handleAccept} disabled={busy} style={{ flex: 1, height: 56, background: 'var(--success)', color: '#fff', borderRadius: 16, fontSize: 15, fontWeight: 500, opacity: busy ? 0.7 : 1 }}>
+          {busy ? 'Accepting…' : 'Accept'}
         </button>
       </div>
     </div>

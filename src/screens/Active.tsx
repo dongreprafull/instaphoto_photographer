@@ -1,85 +1,134 @@
-import { useState } from 'react'
-import { mockActiveBooking, formatCurrency } from '../mock/data'
+import { useEffect, useState } from 'react'
+import { apiFetch } from '../lib/api'
 import { PhoneIcon, NavigateIcon } from './Icons'
 
-const STEPS: { key: typeof mockActiveBooking.status; label: string }[] = [
-  { key: 'accepted', label: 'Accepted' },
+type Status = 'assigned' | 'on_the_way' | 'arrived' | 'completed'
+
+interface ActiveBookingDetail {
+  booking_id: number
+  booking_code: string
+  status: Status
+  total_amount: string
+  address: string | null
+  package_name: string
+  photos_count: number
+  duration_mins: number
+  customer_name: string
+  customer_mobile: string
+}
+
+const STEPS: { key: Status; label: string }[] = [
+  { key: 'assigned', label: 'Assigned' },
   { key: 'on_the_way', label: 'On the way' },
   { key: 'arrived', label: 'Arrived' },
   { key: 'completed', label: 'Completed' },
 ]
 
-const NEXT_ACTION: Record<typeof mockActiveBooking.status, string> = {
-  accepted: 'Start trip',
+const NEXT_STATUS: Record<Status, Status | null> = {
+  assigned: 'on_the_way',
+  on_the_way: 'arrived',
+  arrived: 'completed',
+  completed: null,
+}
+
+const NEXT_LABEL: Record<Status, string> = {
+  assigned: 'Start trip',
   on_the_way: 'Mark as arrived',
   arrived: 'Mark as completed',
   completed: 'Booking completed',
 }
 
-// UI-only pass: each status button posts to POST /bookings/update-status.php.
-// "Mark as completed" should hand off to an invoice/photo-delivery step —
-// out of scope for this pass.
-export default function Active({ onDone }: { onDone: () => void }) {
-  const [status, setStatus] = useState<typeof mockActiveBooking.status>(mockActiveBooking.status)
-  const booking = mockActiveBooking
-  const currentIndex = STEPS.findIndex((s) => s.key === status)
+export default function Active({ initialBookingId, onDone }: { initialBookingId?: number; onDone: () => void }) {
+  const [booking, setBooking] = useState<ActiveBookingDetail | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-  function advance() {
-    const order: (typeof mockActiveBooking.status)[] = ['accepted', 'on_the_way', 'arrived', 'completed']
-    const idx = order.indexOf(status)
-    if (idx < order.length - 1) {
-      setStatus(order[idx + 1])
-    } else {
-      onDone()
+  useEffect(() => {
+    apiFetch<{ booking: ActiveBookingDetail | null }>('/photographers/active-booking.php')
+      .then((data) => {
+        if (data.booking) setBooking(data.booking)
+        else onDone()
+      })
+      .catch(() => setError('Could not load booking.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBookingId])
+
+  async function advance() {
+    if (!booking) return
+    const next = NEXT_STATUS[booking.status]
+    if (!next) return onDone()
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch('/bookings/update-status.php', { method: 'POST', body: { booking_id: booking.booking_id, status: next } })
+      if (next === 'completed') {
+        onDone()
+      } else {
+        setBooking({ ...booking, status: next })
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Could not update status.')
+    } finally {
+      setBusy(false)
     }
   }
+
+  if (!booking) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
+        {error || 'Loading…'}
+      </div>
+    )
+  }
+
+  const currentIndex = STEPS.findIndex((s) => s.key === booking.status)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 24px 16px' }}>
-        <span style={{ fontSize: 16, fontWeight: 500 }}>Booking {booking.id}</span>
+        <span style={{ fontSize: 16, fontWeight: 500 }}>Booking {booking.booking_code}</span>
         <span style={{ fontSize: 11, fontWeight: 500, background: 'var(--success-bg)', color: 'var(--success)', padding: '4px 10px', borderRadius: 999 }}>
-          {STEPS[currentIndex].label}
+          {STEPS[currentIndex]?.label}
         </span>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--accent-bg)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 500 }}>
-            PD
+            {booking.customer_name.slice(0, 2).toUpperCase()}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>{booking.customerName}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{booking.customerPhoneMasked}</div>
+            <div style={{ fontSize: 14, fontWeight: 500 }}>{booking.customer_name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{booking.customer_mobile}</div>
           </div>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--accent)', color: '#fff', borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 500 }}>
+          <a href={`tel:${booking.customer_mobile}`} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--accent)', color: '#fff', borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>
             <PhoneIcon />
             Call
-          </button>
+          </a>
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-          <svg width="100%" height="140" viewBox="0 0 342 140" preserveAspectRatio="none" aria-hidden="true">
-            <rect width="342" height="140" fill="#e3e8ee" />
-            <path d="M0 50 H342" stroke="#cbd3db" strokeWidth={3} />
-            <path d="M150 0 V140" stroke="#cbd3db" strokeWidth={3} />
-            <circle cx="200" cy="80" r="7" fill="#4338ca" stroke="#fff" strokeWidth={2} />
-          </svg>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{booking.address}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{booking.distanceKm} km · ~{booking.etaMins} min away</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{booking.address || 'Address not provided'}</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--dark)', color: '#fff', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 500 }}>
-              <NavigateIcon />
-              Navigate
-            </button>
+            {booking.address && (
+              <a
+                href={`https://maps.google.com/?q=${encodeURIComponent(booking.address)}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--dark)', color: '#fff', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 500, textDecoration: 'none' }}
+              >
+                <NavigateIcon />
+                Navigate
+              </a>
+            )}
           </div>
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-          <Row label="Package" value={`${booking.packageName} · ${formatCurrency(booking.value)}`} />
-          <Row label="Session time" value={`${booking.durationMins} min`} />
+          <Row label="Package" value={`${booking.package_name} · ₹${parseFloat(booking.total_amount).toFixed(2)}`} />
+          <Row label="Session time" value={`${booking.duration_mins} min`} />
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
@@ -90,14 +139,13 @@ export default function Active({ onDone }: { onDone: () => void }) {
             ))}
           </div>
         </div>
+
+        {error && <div style={{ color: '#c0392b', fontSize: 13 }}>{error}</div>}
       </div>
 
       <div style={{ padding: '16px 24px 24px', background: 'var(--surface)', borderTop: '1px solid var(--border)' }}>
-        <button
-          onClick={advance}
-          style={{ width: '100%', height: 52, background: 'var(--accent)', color: '#fff', borderRadius: 14, fontSize: 15, fontWeight: 500 }}
-        >
-          {NEXT_ACTION[status]}
+        <button onClick={advance} disabled={busy} style={{ width: '100%', height: 52, background: 'var(--accent)', color: '#fff', borderRadius: 14, fontSize: 15, fontWeight: 500, opacity: busy ? 0.7 : 1 }}>
+          {busy ? 'Updating…' : NEXT_LABEL[booking.status]}
         </button>
       </div>
     </div>
