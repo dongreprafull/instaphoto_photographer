@@ -12,6 +12,7 @@ export default function Register({
   onSubmit: () => void
 }) {
   const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
   const [address, setAddress] = useState('')
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null)
   const [aadharDoc, setAadharDoc] = useState<File | null>(null)
@@ -23,7 +24,7 @@ export default function Register({
   const aadharInput = useRef<HTMLInputElement>(null)
   const panInput = useRef<HTMLInputElement>(null)
 
-  const canSubmit = name.trim().length > 2 && address.trim().length > 4 && aadharDoc && panDoc && !submitting
+  const canSubmit = name.trim().length > 2 && password.length >= 6 && address.trim().length > 4 && aadharDoc && panDoc && !submitting
 
   async function handleSubmit() {
     if (!canSubmit) return
@@ -33,6 +34,7 @@ export default function Register({
       const form = new FormData()
       form.append('name', name.trim())
       form.append('mobile', mobile)
+      form.append('password', password)
       form.append('address', address.trim())
       if (profilePhoto) form.append('profile_photo', profilePhoto)
       if (aadharDoc) form.append('aadhar_doc', aadharDoc)
@@ -85,6 +87,10 @@ export default function Register({
 
         <Field label="Mobile number">
           <input value={`+91 ${mobile}`} disabled style={{ ...inputStyle, color: 'var(--text-muted)' }} />
+        </Field>
+
+        <Field label="Set a password">
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" style={inputStyle} />
         </Field>
 
         <Field label="Address">
