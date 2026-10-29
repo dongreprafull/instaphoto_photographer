@@ -14,9 +14,30 @@ export default function Login({ onResult }: { onResult: (result: LoginResult) =>
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+
+  async function handleForgotPassword() {
+    setError('')
+    setInfo('')
+    if (mobile.length !== 10) return setError('Enter your 10-digit mobile number above first.')
+    setLoading(true)
+    try {
+      const data = await apiFetch<{ message: string }>('/auth/forgot-password.php', {
+        method: 'POST',
+        body: { mobile, purpose: 'photographer_login' },
+        auth: false,
+      })
+      setInfo(data.message)
+    } catch (e: any) {
+      setError(e?.message || 'Could not send request.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleLogin() {
     setError('')
+    setInfo('')
     if (mobile.length !== 10) return setError('Enter a valid 10-digit mobile number.')
     if (password.length < 6) return setError('Password must be at least 6 characters.')
     setLoading(true)
@@ -86,7 +107,16 @@ export default function Login({ onResult }: { onResult: (result: LoginResult) =>
           style={passwordStyle}
         />
 
+        <button
+          onClick={handleForgotPassword}
+          disabled={loading}
+          style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--text-muted)', textAlign: 'right', padding: 0, marginBottom: 12, width: '100%' }}
+        >
+          Forgot password?
+        </button>
+
         {error && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {info && <div style={{ color: 'var(--accent)', fontSize: 12, marginBottom: 12 }}>{info}</div>}
 
         <button
           disabled={mobile.length !== 10 || password.length < 6 || loading}

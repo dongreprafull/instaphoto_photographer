@@ -13,6 +13,7 @@ export default function Register({
 }) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [address, setAddress] = useState('')
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null)
   const [aadharDoc, setAadharDoc] = useState<File | null>(null)
@@ -24,7 +25,14 @@ export default function Register({
   const aadharInput = useRef<HTMLInputElement>(null)
   const panInput = useRef<HTMLInputElement>(null)
 
-  const canSubmit = name.trim().length > 2 && password.length >= 6 && address.trim().length > 4 && aadharDoc && panDoc && !submitting
+  const canSubmit =
+    name.trim().length > 2 &&
+    password.length >= 6 &&
+    password === confirmPassword &&
+    address.trim().length > 4 &&
+    aadharDoc &&
+    panDoc &&
+    !submitting
 
   async function handleSubmit() {
     if (!canSubmit) return
@@ -91,6 +99,13 @@ export default function Register({
 
         <Field label="Set a password">
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" style={inputStyle} />
+        </Field>
+
+        <Field label="Confirm password">
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter password" style={inputStyle} />
+          {confirmPassword.length > 0 && confirmPassword !== password && (
+            <div style={{ color: '#c0392b', fontSize: 12, marginTop: 4 }}>Passwords do not match.</div>
+          )}
         </Field>
 
         <Field label="Address">
