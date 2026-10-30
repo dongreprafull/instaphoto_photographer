@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Geolocation } from '@capacitor/geolocation'
 import { apiFetch, clearSession, getSession } from '../lib/api'
+import { getCurrentLocation } from '../lib/location'
 import { SEARCH_RADIUS_KM } from '../mock/data'
 import { CameraIcon, EditIcon, WalletIcon, LogoutIcon } from './Icons'
 
@@ -46,10 +46,10 @@ export default function Home({
 
     const pushLocation = async () => {
       try {
-        const pos = await Geolocation.getCurrentPosition()
+        const loc = await getCurrentLocation()
         await apiFetch('/photographers/status.php', {
           method: 'POST',
-          body: { is_online: true, lat: pos.coords.latitude, lng: pos.coords.longitude },
+          body: { is_online: true, lat: loc.lat, lng: loc.lng },
         })
       } catch {
         // keep trying on the next tick
@@ -90,14 +90,14 @@ export default function Home({
     }
     setBusy(true)
     try {
-      const pos = await Geolocation.getCurrentPosition()
+      const loc = await getCurrentLocation()
       await apiFetch('/photographers/status.php', {
         method: 'POST',
-        body: { is_online: true, lat: pos.coords.latitude, lng: pos.coords.longitude },
+        body: { is_online: true, lat: loc.lat, lng: loc.lng },
       })
       setOnline(true)
     } catch (e: any) {
-      setError(e?.message || 'Could not go online. Allow location access and try again.')
+      setError(e?.message || 'Could not go online. Please try again.')
     } finally {
       setBusy(false)
     }
