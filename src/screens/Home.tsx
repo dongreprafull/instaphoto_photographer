@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, clearSession, getSession } from '../lib/api'
 import { getCurrentLocation } from '../lib/location'
+import { playRing } from '../lib/ringtone'
 import { SEARCH_RADIUS_KM } from '../mock/data'
 import { CameraIcon, EditIcon, WalletIcon, LogoutIcon } from './Icons'
 
@@ -58,7 +59,10 @@ export default function Home({
     const checkOffer = async () => {
       try {
         const data = await apiFetch<{ offer: PendingOffer | null }>('/photographers/pending-offer.php')
-        if (data.offer && watchingRef.current) onIncoming(data.offer)
+        if (data.offer && watchingRef.current) {
+          playRing()
+          onIncoming(data.offer)
+        }
       } catch {
         // ignore transient errors
       }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
+import { stopRing } from '../lib/ringtone'
 import type { PendingOffer } from './Home'
 
 const REQUEST_TIMEOUT_SECONDS = 15
@@ -28,13 +29,17 @@ export default function Incoming({
         return s - 1
       })
     }, 1000)
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      stopRing()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleAccept() {
     setBusy(true)
     setError('')
+    stopRing()
     try {
       await apiFetch('/bookings/accept.php', { method: 'POST', body: { booking_id: offer.booking_id } })
       onAccept()
@@ -50,6 +55,7 @@ export default function Incoming({
   }
 
   async function handleDecline() {
+    stopRing()
     try {
       await apiFetch('/bookings/decline.php', { method: 'POST', body: { booking_id: offer.booking_id } })
     } catch {

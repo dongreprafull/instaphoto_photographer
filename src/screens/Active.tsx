@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet'
+import { divIcon } from 'leaflet'
 import { apiFetch } from '../lib/api'
+import { getCurrentLocation } from '../lib/location'
 import { PhoneIcon, NavigateIcon } from './Icons'
+import MapResizeFix from '../components/MapResizeFix'
 
 type Status = 'assigned' | 'on_the_way' | 'arrived' | 'completed'
 
@@ -10,11 +14,22 @@ interface ActiveBookingDetail {
   status: Status
   total_amount: string
   address: string | null
+  user_lat: string | number
+  user_lng: string | number
   package_name: string
   photos_count: number
   duration_mins: number
   customer_name: string
   customer_mobile: string
+}
+
+function FitBothMarkers({ a, b }: { a: [number, number]; b: [number, number] }) {
+  const map = useMap()
+  useEffect(() => {
+    map.fitBounds([a, b], { padding: [36, 36], maxZoom: 16 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a[0], a[1], b[0], b[1]])
+  return null
 }
 
 const STEPS: { key: Status; label: string }[] = [
@@ -40,6 +55,7 @@ const NEXT_LABEL: Record<Status, string> = {
 
 export default function Active({ initialBookingId, onDone }: { initialBookingId?: number; onDone: () => void }) {
   const [booking, setBooking] = useState<ActiveBookingDetail | null>(null)
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -52,6 +68,29 @@ export default function Active({ initialBookingId, onDone }: { initialBookingId?
       .catch(() => setError('Could not load booking.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialBookingId])
+
+  // Keep pushing our live location to the server while on this screen (the
+  // Home screen's own location loop stops once it unmounts) so the
+  // customer's app can show us moving towards them on their map.
+  useEffect(() => {
+    let active = true
+    const pushLocation = async () => {
+      try {
+        const loc = await getCurrentLocation()
+        if (!active) return
+        setMyLocation(loc)
+        await apiFetch('/photographers/status.php', { method: 'POST', body: { is_online: true, lat: loc.lat, lng: loc.lng } })
+      } catch {
+        // keep trying on the next tick
+      }
+    }
+    pushLocation()
+    const timer = setInterval(pushLocation, 8000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [])
 
   async function advance() {
     if (!booking) return
@@ -108,21 +147,35 @@ export default function Active({ initialBookingId, onDone }: { initialBookingId?
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ height: 220, position: 'relative' }}>
+            <MapContainer
+              center={[Number(booking.user_lat), Number(booking.user_lng)]}
+              zoom={14}
+              zoomControl={false}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <MapResizeFix />
+              {myLocation && (
+                <FitBothMarkers a={[Number(booking.user_lat), Number(booking.user_lng)]} b={[myLocation.lat, myLocation.lng]} />
+              )}
+              <MapMarker lat={Number(booking.user_lat)} lng={Number(booking.user_lng)} color="#4338ca" label="Customer" />
+              {myLocation && <MapMarker lat={myLocation.lat} lng={myLocation.lng} color="#15803d" label="You" />}
+            </MapContainer>
+          </div>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{booking.address || 'Address not provided'}</div>
             </div>
-            {booking.address && (
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(booking.address)}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--dark)', color: '#fff', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 500, textDecoration: 'none' }}
-              >
-                <NavigateIcon />
-                Navigate
-              </a>
-            )}
+            <a
+              href={`https://maps.google.com/?q=${booking.user_lat},${booking.user_lng}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--dark)', color: '#fff', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 500, textDecoration: 'none' }}
+            >
+              <NavigateIcon />
+              Navigate
+            </a>
           </div>
         </div>
 
@@ -159,6 +212,19 @@ function Row({ label, value }: { label: string; value: string }) {
       <span style={{ fontWeight: 500 }}>{value}</span>
     </div>
   )
+}
+
+function MapMarker({ lat, lng, color, label }: { lat: number; lng: number; color: string; label: string }) {
+  const icon = divIcon({
+    className: '',
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;transform:translateY(-6px)">
+      <span style="font-size:10px;font-weight:600;background:${color};color:#fff;padding:2px 6px;border-radius:999px;white-space:nowrap">${label}</span>
+      <span style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.35)"></span>
+    </div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  })
+  return <Marker position={[lat, lng]} icon={icon} />
 }
 
 function StepDot({ label, active, last, connectorActive }: { label: string; active: boolean; last: boolean; connectorActive: boolean }) {
